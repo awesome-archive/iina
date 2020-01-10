@@ -5,12 +5,11 @@ target 'iina' do
   use_frameworks!
 
   # Pods for iina
-  pod 'MASPreferences'
-  pod 'Just'
-  pod 'AEXML'
-  pod "PromiseKit", "~> 4.0"
+  pod 'Just', :git => 'https://github.com/iina/Just', :branch => 'swift-5'
+  pod 'PromiseKit'
   pod 'GzipSwift'
-  pod 'GRMustache.swift'
+  pod 'GRMustache.swift', :git => 'https://github.com/iina/GRMustache.swift'
+  pod 'Sparkle'
 
 #  target 'iinaTests' do
 #    inherit! :search_paths

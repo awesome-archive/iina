@@ -47,23 +47,13 @@ class PlaybackHistory: NSObject, NSCoding {
     self.addedDate = date
     self.duration = VideoTime(duration)
 
-    // try read mpv watch_later file
-
-    let fileURL = Utility.watchLaterURL.appendingPathComponent(mpvMd5)
-    if let reader = StreamReader(path: fileURL.path) {
-      if let firstLine = reader.nextLine(),
-        firstLine.hasPrefix("start="),
-        let progressString = firstLine.components(separatedBy: "=").last,
-        let progress = Double(progressString) {
-        self.mpvProgress = VideoTime(progress)
-      }
-    }
+    self.mpvProgress = Utility.playbackProgressFromWatchLater(mpvMd5)
   }
 
   init(url: URL, duration: Double, name: String? = nil) {
     self.url = url
     self.name = name ?? url.lastPathComponent
-    self.mpvMd5 = url.path.md5  // FIXME: should implement mpv's algorithm for dvd://, etc
+    self.mpvMd5 = Utility.mpvWatchLaterMd5(url.path)
     self.played = true
     self.addedDate = Date()
     self.duration = VideoTime(duration)

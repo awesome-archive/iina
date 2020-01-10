@@ -1,5 +1,5 @@
 //
-//  PreferenceGeneralViewController.swift
+//  PrefGeneralViewController.swift
 //  iina
 //
 //  Created by lhc on 27/10/2016.
@@ -7,62 +7,49 @@
 //
 
 import Cocoa
-import MASPreferences
+import Sparkle
 
+@objcMembers
+class PrefGeneralViewController: PreferenceViewController, PreferenceWindowEmbeddable {
 
-class PrefGeneralViewController: NSViewController, MASPreferencesViewController {
-
-  override var nibName: String? {
-    get {
-      return "PrefGeneralViewController"
-    }
+  override var nibName: NSNib.Name {
+    return NSNib.Name("PrefGeneralViewController")
   }
 
-  override var identifier: String? {
-    get {
-      return "general"
-    }
-    set {
-      super.identifier = newValue
-    }
+  var preferenceTabTitle: String {
+    return NSLocalizedString("preference.general", comment: "General")
   }
 
-  var toolbarItemImage: NSImage {
-    get {
-      return NSImage(named: NSImageNamePreferencesGeneral)!
-    }
+  var preferenceTabImage: NSImage {
+    return NSImage(named: NSImage.Name("pref_general"))!
   }
 
-  var toolbarItemLabel: String {
-    get {
-      // dirty hack here: layout the view before `MASPreferencesWIndowController` getting `bounds`.
-      view.layoutSubtreeIfNeeded()
-      return NSLocalizedString("preference.general", comment: "General")
-    }
+  override var sectionViews: [NSView] {
+    return [behaviorView, historyView, playlistView, screenshotsView]
   }
 
-  // view size is handled by AutoLayout, so it's not resizable
-  var hasResizableWidth: Bool = false
-  var hasResizableHeight: Bool = false
-
-  override func viewDidLoad() {
-    super.viewDidLoad()
-    // Do view setup here.
-  }
+  @IBOutlet var behaviorView: NSView!
+  @IBOutlet var historyView: NSView!
+  @IBOutlet var playlistView: NSView!
+  @IBOutlet var screenshotsView: NSView!
 
   // MARK: - IBAction
 
   @IBAction func chooseScreenshotPathAction(_ sender: AnyObject) {
-    Utility.quickOpenPanel(title: "Choose screenshot save path", isDir: true) { url in
-      UserDefaults.standard.set(url.path, forKey: Preference.Key.screenshotFolder)
+    Utility.quickOpenPanel(title: "Choose screenshot save path", chooseDir: true, sheetWindow: view.window) { url in
+      Preference.set(url.path, for: .screenshotFolder)
       UserDefaults.standard.synchronize()
     }
   }
 
   @IBAction func rememberRecentChanged(_ sender: NSButton) {
-    if sender.state == NSOffState {
-      NSDocumentController.shared().clearRecentDocuments(self)
+    if sender.state == .off {
+      NSDocumentController.shared.clearRecentDocuments(self)
     }
+  }
+
+  @IBAction func receiveBetaUpdatesChanged(_ sender: NSButton) {
+    SUUpdater.shared().feedURL = URL(string: sender.state == .on ? AppData.appcastBetaLink : AppData.appcastLink)!
   }
 
 }

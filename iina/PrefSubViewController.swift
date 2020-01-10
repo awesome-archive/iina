@@ -9,72 +9,90 @@
 import Cocoa
 import PromiseKit
 
-class PrefSubViewController: NSViewController {
+@objcMembers
+class PrefSubViewController: PreferenceViewController, PreferenceWindowEmbeddable {
 
-  override var nibName: String? {
-    return "PrefSubViewController"
+  override var nibName: NSNib.Name {
+    return NSNib.Name("PrefSubViewController")
   }
 
-  override var identifier: String? {
-    get {
-      return "sub"
-    }
-    set {
-      super.identifier = newValue
-    }
-  }
-
-  var toolbarItemImage: NSImage {
-    return NSImage(named: NSImageNameFontPanel)!
-  }
-
-  var toolbarItemLabel: String {
-    view.layoutSubtreeIfNeeded()
+  var preferenceTabTitle: String {
     return NSLocalizedString("preference.subtitle", comment: "Subtitles")
   }
 
-  var hasResizableWidth: Bool = false
-  var hasResizableHeight: Bool = false
+  var preferenceTabImage: NSImage {
+    return NSImage(named: NSImage.Name("pref_sub"))!
+  }
 
-  @IBOutlet weak var scrollView: NSScrollView!
+  override var sectionViews: [NSView] {
+    return [sectionAutoLoadView, sectionASSView, sectionTextSubView, sectionPositionView, sectionOnlineSubView, sectionOtherView]
+  }
+
+  @IBOutlet var sectionAutoLoadView: NSView!
+  @IBOutlet var sectionASSView: NSView!
+  @IBOutlet var sectionTextSubView: NSView!
+  @IBOutlet var sectionPositionView: NSView!
+  @IBOutlet var sectionOnlineSubView: NSView!
+  @IBOutlet var sectionOtherView: NSView!
+
+  @IBOutlet weak var subSourceStackView: NSStackView!
+  @IBOutlet weak var subSourcePopUpButton: NSPopUpButton!
+
   @IBOutlet weak var subLangTokenView: NSTokenField!
   @IBOutlet weak var loginIndicator: NSProgressIndicator!
+  @IBOutlet weak var defaultEncodingList: NSPopUpButton!
 
+  private let tokenFieldDelegate = ISO639TokenFieldDelegate()
 
   override func viewDidLoad() {
     super.viewDidLoad()
 
-    scrollView.addConstraint(NSLayoutConstraint(item: scrollView, attribute: .height, relatedBy: .equal, toItem: nil, attribute: .notAnAttribute, multiplier: 1.0, constant: 460))
+    let defaultEncoding = Preference.string(for: .defaultEncoding)
+    for encoding in AppData.encodings {
+      defaultEncodingList.addItem(withTitle: encoding.title)
+      let lastItem = defaultEncodingList.lastItem!
+      lastItem.representedObject = encoding.code
+      if encoding.code == defaultEncoding ?? "auto" {
+        defaultEncodingList.select(lastItem)
+      }
+    }
 
-    subLangTokenView.delegate = self
+    defaultEncodingList.menu?.insertItem(NSMenuItem.separator(), at: 1)
+
+    subLangTokenView.delegate = tokenFieldDelegate
     loginIndicator.isHidden = true
+
+    refreshOnlineSubSource()
   }
 
   @IBAction func chooseSubFontAction(_ sender: AnyObject) {
     Utility.quickFontPickerWindow { font in
-      UserDefaults.standard.set(font ?? "sans-serif", forKey: Preference.Key.subTextFont)
+      Preference.set(font ?? "sans-serif", for: .subTextFont)
       UserDefaults.standard.synchronize()
     }
   }
 
   @IBAction func openSubLoginAction(_ sender: AnyObject) {
-    let currUsername = UserDefaults.standard.string(forKey: Preference.Key.openSubUsername) ?? ""
+    let currUsername = Preference.string(for: .openSubUsername) ?? ""
     if currUsername.isEmpty {
       // if current username is empty, login
-      let _ = Utility.quickUsernamePasswordPanel("opensub.login") {
-        (username, password) in
-        loginIndicator.isHidden = false
-        loginIndicator.startAnimation(nil)
+      Utility.quickUsernamePasswordPanel("opensub.login", sheetWindow: self.view.window) { (username, password) in
+        self.loginIndicator.isHidden = false
+        self.loginIndicator.startAnimation(nil)
         firstly {
           OpenSubSupport().login(testUser: username, password: password)
-        }.then { () -> Void in
-          let status = OpenSubSupport.savePassword(username: username, passwd: password)
-          if status == errSecSuccess {
-            UserDefaults.standard.set(username, forKey: Preference.Key.openSubUsername)
-          } else {
-            Utility.showAlert("sub.cannot_save_passwd", arguments: [SecCopyErrorMessageString(status, nil) as! CVarArg])
+        }.map { _ in
+          do {
+            try KeychainAccess.write(username: username, password: password, forService: .openSubAccount)
+            Preference.set(username, for: .openSubUsername)
+          } catch KeychainAccess.KeychainError.noResult {
+            Utility.showAlert("sub.cannot_save_passwd", arguments: ["Cannot find password."], sheetWindow: self.view.window)
+          } catch KeychainAccess.KeychainError.unhandledError(let message) {
+            Utility.showAlert("sub.cannot_save_passwd", arguments: [message], sheetWindow: self.view.window)
+          } catch KeychainAccess.KeychainError.unexpectedData {
+            Utility.showAlert("sub.cannot_save_passwd", arguments: ["Unexcepted data when reading password."], sheetWindow: self.view.window)
           }
-        }.always {
+        }.ensure {
           self.loginIndicator.isHidden = true
           self.loginIndicator.stopAnimation(nil)
         }.catch { err in
@@ -87,65 +105,40 @@ class PrefSubViewController: NSViewController {
           default:
             message = "Unknown error"
           }
-          Utility.showAlert("sub.cannot_login", arguments: [message])
+          Utility.showAlert("sub.cannot_login", arguments: [message], sheetWindow: self.view.window)
         }
       }
     } else {
       // else, logout
-      UserDefaults.standard.set("", forKey: Preference.Key.openSubUsername)
+      Preference.set("", for: .openSubUsername)
     }
   }
 
-  @IBAction func OpenSubHelpBtnAction(_ sender: AnyObject) {
-    NSWorkspace.shared().open(URL(string: AppData.wikiLink.appending("/Download-Online-Subtitles#opensubtitles"))!)
-  }
-}
-
-
-extension PrefSubViewController: NSTokenFieldDelegate {
-
-  func tokenField(_ tokenField: NSTokenField, styleForRepresentedObject representedObject: Any) -> NSTokenStyle {
-    return .rounded
+  @IBAction func changeDefaultEncoding(_ sender: NSPopUpButton) {
+    Preference.set(sender.selectedItem!.representedObject!, for: .defaultEncoding)
+    PlayerCore.active.setSubEncoding((sender.selectedItem?.representedObject as? String) ?? "auto")
+    PlayerCore.active.reloadAllSubs()
   }
 
-  func tokenField(_ tokenField: NSTokenField, hasMenuForRepresentedObject representedObject: Any) -> Bool {
-    return false
+  @IBAction func openSubHelpBtnAction(_ sender: AnyObject) {
+    NSWorkspace.shared.open(URL(string: AppData.wikiLink.appending("/Download-Online-Subtitles#opensubtitles"))!)
   }
 
-  func tokenField(_ tokenField: NSTokenField, completionsForSubstring substring: String, indexOfToken tokenIndex: Int, indexOfSelectedItem selectedIndex: UnsafeMutablePointer<Int>?) -> [Any]? {
-    let lowSubString = substring.lowercased()
-    let matches = ISO639_2Helper.languages.filter { lang in
-      return lang.name.reduce(false) { $1.lowercased().hasPrefix(lowSubString) || $0 }
-    }
-    return matches.map { $0.description }
+  @IBAction func assrtHelpBtnAction(_ sender: AnyObject) {
+    NSWorkspace.shared.open(URL(string: AppData.wikiLink.appending("/Download-Online-Subtitles#assrt"))!)
   }
 
-  func tokenField(_ tokenField: NSTokenField, representedObjectForEditing editingString: String) -> Any {
-    if let code = Regex.iso639_2Desc.captures(in: editingString).at(1) {
-      return SubLangToken(code)
-    } else {
-      return SubLangToken(editingString)
+  @IBAction func onlineSubSourceAction(_ sender: NSPopUpButton) {
+    refreshOnlineSubSource()
+  }
+
+  private func refreshOnlineSubSource() {
+    let tag = subSourcePopUpButton.selectedTag()
+    for (index, view) in subSourceStackView.views.enumerated() {
+      if index == 0 { continue }
+      subSourceStackView.setVisibilityPriority(index == tag ? .mustHold : .notVisible, for: view)
     }
   }
-
-  func tokenField(_ tokenField: NSTokenField, displayStringForRepresentedObject representedObject: Any) -> String? {
-    if let token = representedObject as? SubLangToken {
-      return token.name
-    } else {
-      return representedObject as? String
-    }
-  }
-
-}
-
-
-class SubLangToken: NSObject {
-  var name: String
-
-  init(_ name: String) {
-    self.name = name
-  }
-
 }
 
 
@@ -167,30 +160,6 @@ class SubLangToken: NSObject {
 }
 
 
-@objc(SubLangTransformer) class SubLangTransformer: ValueTransformer {
-
-  static override func allowsReverseTransformation() -> Bool {
-    return true
-  }
-
-  static override func transformedValueClass() -> AnyClass {
-    return NSString.self
-  }
-
-  override func transformedValue(_ value: Any?) -> Any? {
-    guard let str = value as? NSString else { return nil }
-    if str.length == 0 { return [] }
-    return str.components(separatedBy: ",").map { SubLangToken($0) }
-  }
-
-  override func reverseTransformedValue(_ value: Any?) -> Any? {
-    guard let arr = value as? NSArray else { return "" }
-    return arr.map{ ($0 as! SubLangToken).name }.joined(separator: ",")
-  }
-  
-}
-
-
 @objc(OpenSubAccountNameTransformer) class OpenSubAccountNameTransformer: ValueTransformer {
 
   static override func allowsReverseTransformation() -> Bool {
@@ -209,7 +178,7 @@ class SubLangToken: NSObject {
       return String(format: NSLocalizedString("preference.logged_in_as", comment: "Logged in as"), username)
     }
   }
-  
+
 }
 
 
@@ -227,5 +196,5 @@ class SubLangToken: NSObject {
     let username = value as? NSString ?? ""
     return NSLocalizedString((username.length == 0 ? "general.login" : "general.logout"), comment: "")
   }
-  
+
 }

@@ -12,9 +12,19 @@ fileprivate let MenuItemTagRevealInFinder = 100
 fileprivate let MenuItemTagDelete = 101
 fileprivate let MenuItemTagSearchFilename = 200
 fileprivate let MenuItemTagSearchFullPath = 201
+fileprivate let MenuItemTagPlay = 300
+fileprivate let MenuItemTagPlayInNewWindow = 301
+
+fileprivate extension NSUserInterfaceItemIdentifier {
+  static let time = NSUserInterfaceItemIdentifier("Time")
+  static let filename = NSUserInterfaceItemIdentifier("Filename")
+  static let progress = NSUserInterfaceItemIdentifier("Progress")
+  static let group = NSUserInterfaceItemIdentifier("Group")
+  static let contextMenu = NSUserInterfaceItemIdentifier("ContextMenu")
+}
 
 
-class HistoryWindowController: NSWindowController, NSOutlineViewDelegate, NSOutlineViewDataSource, NSMenuDelegate {
+class HistoryWindowController: NSWindowController, NSOutlineViewDelegate, NSOutlineViewDataSource, NSMenuDelegate, NSMenuItemValidation {
 
   enum SortOption: Int {
     case lastPlayed = 0
@@ -26,34 +36,16 @@ class HistoryWindowController: NSWindowController, NSOutlineViewDelegate, NSOutl
   }
 
   private let getKey: [SortOption: (PlaybackHistory) -> String] = [
-    .lastPlayed: { HistoryWindowController.dateFormatterDate.string(from: $0.addedDate) },
+    .lastPlayed: { DateFormatter.localizedString(from: $0.addedDate, dateStyle: .medium, timeStyle: .none) },
     .fileLocation: { $0.url.deletingLastPathComponent().path }
   ]
 
-  override var windowNibName: String {
-    return "HistoryWindowController"
+  override var windowNibName: NSNib.Name {
+    return NSNib.Name("HistoryWindowController")
   }
 
   @IBOutlet weak var outlineView: NSOutlineView!
   @IBOutlet weak var historySearchField: NSSearchField!
-
-  private static let dateFormatterDate: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "MM-dd"
-    return formatter
-  }()
-
-  private static let dateFormatterTime: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "HH:mm"
-    return formatter
-  }()
-
-  private static let dateFormatterDateAndTime: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "MM-dd HH:mm"
-    return formatter
-  }()
 
   var groupBy: SortOption = .lastPlayed
   var searchOption: SearchOption = .fullPath
@@ -64,7 +56,7 @@ class HistoryWindowController: NSWindowController, NSOutlineViewDelegate, NSOutl
   override func windowDidLoad() {
     super.windowDidLoad()
 
-    NotificationCenter.default.addObserver(forName: Constants.Noti.historyUpdated, object: nil, queue: .main) { [unowned self] _ in
+    NotificationCenter.default.addObserver(forName: .iinaHistoryUpdated, object: nil, queue: .main) { [unowned self] _ in
       self.reloadData()
     }
 
@@ -106,8 +98,8 @@ class HistoryWindowController: NSWindowController, NSOutlineViewDelegate, NSOutl
   // MARK: Key event
 
   override func keyDown(with event: NSEvent) {
-    let commandKey = NSEventModifierFlags.command.rawValue
-    if (event.modifierFlags.rawValue & NSEventModifierFlags.deviceIndependentFlagsMask.rawValue) == commandKey  {
+    let commandKey = NSEvent.ModifierFlags.command
+    if [event.modifierFlags, NSEvent.ModifierFlags.deviceIndependentFlagsMask] == commandKey  {
       switch event.charactersIgnoringModifiers! {
       case "f":
         window!.makeFirstResponder(historySearchField)
@@ -116,14 +108,18 @@ class HistoryWindowController: NSWindowController, NSOutlineViewDelegate, NSOutl
       default:
         break
       }
+    } else if event.charactersIgnoringModifiers == "\u{7f}" {
+      outlineView.selectedRowIndexes
+        .compactMap { outlineView.item(atRow: $0) as? PlaybackHistory }
+        .forEach { HistoryController.shared.remove($0) }
     }
   }
 
   // MARK: NSOutlineViewDelegate
 
-  func doubleAction() {
+  @objc func doubleAction() {
     if let selected = outlineView.item(atRow: outlineView.clickedRow) as? PlaybackHistory {
-      PlayerCore.shared.openFile(selected.url)
+      PlayerCore.activeOrNew.openURL(selected.url)
     }
   }
 
@@ -153,10 +149,11 @@ class HistoryWindowController: NSWindowController, NSOutlineViewDelegate, NSOutl
 
   func outlineView(_ outlineView: NSOutlineView, objectValueFor tableColumn: NSTableColumn?, byItem item: Any?) -> Any? {
     if let entry = item as? PlaybackHistory {
-      if tableColumn?.identifier == "Time" {
-        let formatter = groupBy == .lastPlayed ? HistoryWindowController.dateFormatterTime : HistoryWindowController.dateFormatterDateAndTime
-        return formatter.string(from: entry.addedDate)
-      } else if tableColumn?.identifier == "Progress" {
+      if tableColumn?.identifier == .time {
+        return groupBy == .lastPlayed ?
+          DateFormatter.localizedString(from: entry.addedDate, dateStyle: .none, timeStyle: .short) :
+          DateFormatter.localizedString(from: entry.addedDate, dateStyle: .short, timeStyle: .short)
+      } else if tableColumn?.identifier == .progress {
         return entry.duration.stringRepresentation
       }
     }
@@ -165,16 +162,16 @@ class HistoryWindowController: NSWindowController, NSOutlineViewDelegate, NSOutl
 
   func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
     if let identifier = tableColumn?.identifier {
-      let view = outlineView.make(withIdentifier: identifier, owner: nil)
-      if identifier == "Filename" {
+      let view = outlineView.makeView(withIdentifier: identifier, owner: nil)
+      if identifier == .filename {
         // Filename cell
         let entry = item as! PlaybackHistory
         let filenameView = (view as! HistoryFilenameCellView)
-        let fileExists = FileManager.default.fileExists(atPath: entry.url.path)
-        filenameView.textField?.stringValue = entry.name
+        let fileExists = !entry.url.isFileURL || FileManager.default.fileExists(atPath: entry.url.path)
+        filenameView.textField?.stringValue = entry.url.isFileURL ? entry.name : entry.url.absoluteString
         filenameView.textField?.textColor = fileExists ? .controlTextColor : .disabledControlTextColor
-        filenameView.docImage.image = NSWorkspace.shared().icon(forFileType: entry.url.pathExtension)
-      } else if identifier == "Progress" {
+        filenameView.docImage.image = NSWorkspace.shared.icon(forFileType: entry.url.pathExtension)
+      } else if identifier == .progress {
         // Progress cell
         let entry = item as! PlaybackHistory
         let filenameView = (view as! HistoryProgressCellView)
@@ -190,7 +187,7 @@ class HistoryWindowController: NSWindowController, NSOutlineViewDelegate, NSOutl
       return view
     } else {
       // group columns
-      return outlineView.make(withIdentifier: "Group", owner: nil)
+      return outlineView.makeView(withIdentifier: .group, owner: nil)
     }
   }
 
@@ -216,26 +213,32 @@ class HistoryWindowController: NSWindowController, NSOutlineViewDelegate, NSOutl
   private var selectedEntries: [PlaybackHistory] = []
 
   func menuNeedsUpdate(_ menu: NSMenu) {
-    if menu.identifier == "ContextMenu" {
-      var indexSet = outlineView.selectedRowIndexes
-      if outlineView.clickedRow >= 0 {
-        indexSet.insert(outlineView.clickedRow)
+    let selectedRow = outlineView.selectedRowIndexes
+    let clickedRow = outlineView.clickedRow
+    var indexSet = IndexSet()
+    if menu.identifier == .contextMenu {
+      if clickedRow != -1 {
+        if selectedRow.contains(clickedRow) {
+          indexSet = selectedRow
+        } else {
+          indexSet.insert(clickedRow)
+        }
       }
-      selectedEntries = indexSet.flatMap { outlineView.item(atRow: $0) as? PlaybackHistory }
+      selectedEntries = indexSet.compactMap { outlineView.item(atRow: $0) as? PlaybackHistory }
     }
   }
 
-  override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+  func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
     switch menuItem.tag {
     case MenuItemTagRevealInFinder:
       if selectedEntries.isEmpty { return false }
-      return !selectedEntries.filter { FileManager.default.fileExists(atPath: $0.url.path) }.isEmpty
-    case MenuItemTagDelete:
+      return selectedEntries.contains { FileManager.default.fileExists(atPath: $0.url.path) }
+    case MenuItemTagDelete, MenuItemTagPlay, MenuItemTagPlayInNewWindow:
       return !selectedEntries.isEmpty
     case MenuItemTagSearchFilename:
-      menuItem.state = searchOption == .filename ? NSOnState : NSOffState
+      menuItem.state = searchOption == .filename ? .on : .off
     case MenuItemTagSearchFullPath:
-      menuItem.state = searchOption == .fullPath ? NSOnState : NSOffState
+      menuItem.state = searchOption == .fullPath ? .on : .off
     default:
       break
     }
@@ -244,19 +247,30 @@ class HistoryWindowController: NSWindowController, NSOutlineViewDelegate, NSOutl
 
   // MARK: - IBActions
 
+  @IBAction func playAction(_ sender: AnyObject) {
+    guard let firstEntry = selectedEntries.first else { return }
+    PlayerCore.active.openURL(firstEntry.url)
+  }
+
+  @IBAction func playInNewWindowAction(_ sender: AnyObject) {
+    guard let firstEntry = selectedEntries.first else { return }
+    PlayerCore.newPlayerCore.openURL(firstEntry.url)
+  }
+
   @IBAction func groupByChangedAction(_ sender: NSPopUpButton) {
     groupBy = SortOption(rawValue: sender.selectedTag()) ?? .lastPlayed
     reloadData()
   }
 
   @IBAction func revealInFinderAction(_ sender: AnyObject) {
-    let urls = selectedEntries.flatMap { FileManager.default.fileExists(atPath: $0.url.path) ? $0.url: nil }
-    NSWorkspace.shared().activateFileViewerSelecting(urls)
+    let urls = selectedEntries.compactMap { FileManager.default.fileExists(atPath: $0.url.path) ? $0.url: nil }
+    NSWorkspace.shared.activateFileViewerSelecting(urls)
   }
 
   @IBAction func deleteAction(_ sender: AnyObject) {
-    if Utility.quickAskPanel("delete_history") {
-      for entry in selectedEntries {
+    Utility.quickAskPanel("delete_history", sheetWindow: window) { respond in
+      guard respond == .alertFirstButtonReturn else { return }
+      for entry in self.selectedEntries {
         HistoryController.shared.remove(entry)
       }
     }
@@ -284,5 +298,5 @@ class HistoryFilenameCellView: NSTableCellView {
 class HistoryProgressCellView: NSTableCellView {
 
   @IBOutlet var indicator: NSProgressIndicator!
-  
+
 }

@@ -8,53 +8,89 @@
 
 import Cocoa
 
-class PrefCodecViewController: NSViewController {
+@objcMembers
+class PrefCodecViewController: PreferenceViewController, PreferenceWindowEmbeddable {
 
-  override var nibName: String? {
-    return "PrefCodecViewController"
+  override var nibName: NSNib.Name {
+    return NSNib.Name("PrefCodecViewController")
   }
 
-  override var identifier: String? {
-    get {
-      return "codec"
-    }
-    set {
-      super.identifier = newValue
-    }
+  var preferenceTabTitle: String {
+    return NSLocalizedString("preference.video_audio", comment: "Codec")
   }
 
-  var toolbarItemImage: NSImage {
-    return NSImage(named: "toolbar_codec")!
+  var preferenceTabImage: NSImage {
+    return NSImage(named: NSImage.Name("pref_av"))!
   }
 
-  var toolbarItemLabel: String {
-    view.layoutSubtreeIfNeeded()
-    return NSLocalizedString("preference.codec", comment: "Codec")
+  override var sectionViews: [NSView] {
+    return [sectionVideoView, sectionAudioView]
   }
 
-  var hasResizableWidth: Bool = false
-  var hasResizableHeight: Bool = false
+  @IBOutlet var sectionVideoView: NSView!
+  @IBOutlet var sectionAudioView: NSView!
 
   @IBOutlet weak var spdifAC3Btn: NSButton!
   @IBOutlet weak var spdifDTSBtn: NSButton!
   @IBOutlet weak var spdifDTSHDBtn: NSButton!
+  @IBOutlet weak var hwdecDescriptionTextField: NSTextField!
+  @IBOutlet weak var audioLangTokenField: NSTokenField!
 
+  @IBOutlet weak var audioDevicePopUp: NSPopUpButton!
+
+  private let tokenFieldDelegate = ISO639TokenFieldDelegate()
 
   override func viewDidLoad() {
     super.viewDidLoad()
+    audioLangTokenField.delegate = tokenFieldDelegate
+    updateHwdecDescription()
+  }
 
-    let spdif = (PlayerCore.shared.mpvController.getString(MPVOption.Audio.audioSpdif) ?? "").components(separatedBy: ",")
-    spdifAC3Btn.state = spdif.contains("ac3") ? NSOnState : NSOffState
-    spdifDTSBtn.state = spdif.contains("dts") ? NSOnState : NSOffState
-    spdifDTSHDBtn.state = spdif.contains("dts-hd") ? NSOnState : NSOffState
+  override func viewWillAppear() {
+    super.viewWillAppear()
+
+    audioDevicePopUp.removeAllItems()
+    let audioDevices = PlayerCore.active.getAudioDevices()
+    var selected = false
+    audioDevices.forEach { device in
+      audioDevicePopUp.addItem(withTitle: "[\(device["description"]!)] \(device["name"]!)")
+      audioDevicePopUp.lastItem!.representedObject = device
+      if device["name"] == Preference.string(for: .audioDevice) {
+        audioDevicePopUp.select(audioDevicePopUp.lastItem!)
+        selected = true
+      }
+    }
+    if !selected {
+      let device = ["name": Preference.string(for: .audioDevice)!,
+                    "description": Preference.string(for: .audioDeviceDesc)!]
+      audioDevicePopUp.addItem(withTitle: "[\(device["description"]!) (missing)] \(device["name"]!)")
+      audioDevicePopUp.lastItem!.representedObject = device
+      audioDevicePopUp.select(audioDevicePopUp.lastItem!)
+    }
+  }
+
+  @IBAction func audioDeviceAction(_ sender: Any) {
+    let device = audioDevicePopUp.selectedItem!.representedObject as! [String: String]
+    Preference.set(device["name"]!, for: .audioDevice)
+    Preference.set(device["description"]!, for: .audioDeviceDesc)
   }
 
   @IBAction func spdifBtnAction(_ sender: AnyObject) {
     var spdif: [String] = []
-    if spdifAC3Btn.state == NSOnState { spdif.append("ac3") }
-    if spdifDTSBtn.state == NSOnState { spdif.append("dts") }
-    if spdifDTSHDBtn.state == NSOnState { spdif.append("dts-hd") }
-    PlayerCore.shared.mpvController.setString(MPVOption.Audio.audioSpdif, spdif.joined(separator: ","))
+    if spdifAC3Btn.state == .on { spdif.append("ac3") }
+    if spdifDTSBtn.state == .on { spdif.append("dts") }
+    if spdifDTSHDBtn.state == .on { spdif.append("dts-hd") }
+    let spdifString = spdif.joined(separator: ",")
+    PlayerCore.playerCores.forEach { $0.mpv.setString(MPVOption.Audio.audioSpdif, spdifString) }
+  }
+
+  @IBAction func hwdecAction(_ sender: AnyObject) {
+    updateHwdecDescription()
+  }
+
+  private func updateHwdecDescription() {
+    let hwdec: Preference.HardwareDecoderOption = Preference.enum(for: .hardwareDecoder)
+    hwdecDescriptionTextField.stringValue = hwdec.localizedDescription
   }
 
 }

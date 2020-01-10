@@ -3,7 +3,7 @@
 //  iina
 //
 //  Created by lhc on 25/7/16.
-//  Copyright © 2016年 lhc. All rights reserved.
+//  Copyright © 2016 lhc. All rights reserved.
 //
 
 import Foundation
@@ -46,7 +46,7 @@ class VideoTime {
   }
 
   convenience init?(_ format: String) {
-    let split = format.characters.split(separator: ":").map { (seq) -> Int? in
+    let split = format.split(separator: ":").map { (seq) -> Int? in
       return Int(String(seq))
     }
     if !(split.contains {$0 == nil}) {

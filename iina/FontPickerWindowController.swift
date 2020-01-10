@@ -8,7 +8,7 @@
 
 import Cocoa
 
-class FontPickerWindowController: NSWindowController, NSTableViewDelegate, NSTableViewDataSource, NSTextFieldDelegate {
+class FontPickerWindowController: NSWindowController, NSTableViewDelegate, NSTableViewDataSource, NSTextFieldDelegate, NSControlTextEditingDelegate {
 
   struct FontInfo {
     var name: String
@@ -30,16 +30,16 @@ class FontPickerWindowController: NSWindowController, NSTableViewDelegate, NSTab
 
   var finishedPicking: ((String?) -> Void)?
 
-  override var windowNibName: String {
+  override var windowNibName: NSNib.Name {
     get {
-      return "FontPickerWindowController"
+      return NSNib.Name("FontPickerWindowController")
     }
   }
 
   override func windowDidLoad() {
     super.windowDidLoad()
 
-    let manager = NSFontManager.shared()
+    let manager = NSFontManager.shared
 
     fontNames = manager.availableFontFamilies
       .filter { !$0.hasPrefix(".") && !$0.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -91,13 +91,18 @@ class FontPickerWindowController: NSWindowController, NSTableViewDelegate, NSTab
     }
   }
 
-  override func keyUp(with event: NSEvent) {
+  // - MARK: NSTextField delegate
+
+  func controlTextDidChange(_ obj: Notification) {
+    familyTableView.deselectAll(searchField)
     let str = searchField.stringValue
     if str.isEmpty {
       isSearching = false
+      familyTableView.reloadData()
+      faceTableView.reloadData()
     } else {
       isSearching = true
-      filteredFontNames = fontNames.filter { $0.localizedName.lowercased() .contains(str.lowercased()) }
+      filteredFontNames = fontNames.filter { $0.localizedName.lowercased().contains(str.lowercased()) }
       chosenFontMembers = nil
       familyTableView.reloadData()
       faceTableView.reloadData()
@@ -115,6 +120,10 @@ class FontPickerWindowController: NSWindowController, NSTableViewDelegate, NSTab
       // remove the listener
       finishedPicking = nil
     }
+    self.close()
+  }
+
+  @IBAction func cancelBtnPressed(_ sender: AnyObject) {
     self.close()
   }
 

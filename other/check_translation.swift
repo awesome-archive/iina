@@ -1,4 +1,4 @@
-#!/usr/bin/swift
+#!/usr/bin/xcrun swift
 
 import Cocoa
 
@@ -7,7 +7,7 @@ class Regex {
   var regex: NSRegularExpression?
 
   init (_ pattern: String) {
-    if let exp = try? NSRegularExpression(pattern: pattern, options: []) {
+    if let exp = try? NSRegularExpression(pattern: pattern) {
       self.regex = exp
     } else {
       print("Cannot create regex \(pattern)")
@@ -15,21 +15,21 @@ class Regex {
   }
 
   func matches(_ str: String) -> Bool {
-    if let matches = regex?.numberOfMatches(in: str, options: [], range: NSMakeRange(0, str.characters.count)) {
+    if let matches = regex?.numberOfMatches(in: str, range: NSRange(str.startIndex ..< str.endIndex, in: str)) {
       return matches > 0
     } else {
       return false
     }
   }
 
-  func captures(in str: String) -> [String] {
-    var result: [String] = []
-    if let matches = regex?.matches(in: str, options: [], range: NSMakeRange(0, str.characters.count)) {
+  func captures(in str: String) -> [Substring] {
+    var result: [Substring] = []
+    if let matches = regex?.matches(in: str, range: NSRange(str.startIndex ..< str.endIndex, in: str)) {
       matches.forEach { match in
         for i in 0..<match.numberOfRanges {
-          let range = match.rangeAt(i)
-          if range.length > 0 {
-            result.append((str as NSString).substring(with: match.rangeAt(i)))
+          let range = match.range(at: i)
+          if range.length > 0, let swiftRange = Range(range, in: str) {
+            result.append(str[swiftRange])
           } else {
             result.append("")
           }
@@ -44,9 +44,10 @@ class Regex {
 let ignorePlaceHolderTitle = true
 let checkRedundantKey = false
 
-let languages = ["de", "fr", "it", "ja", "ko", "pl", "zh-Hans", "zh-Hant", "ru"]
+let languages = ["de", "fr", "it", "ja", "ko", "pl", "zh-Hans", "zh-Hant", "ru", "tr", "es", "uk", "nl", "sk", "da", "sv", "ro", "pt-BR", "cs", "hi"]
 var testLanguages: [String] = []
 
+let ignoredStrings = ["Label", "Multiline Label", "Text Cell", "Box", "Table View Cell", "Title", "Item", "Context Menu", "0:00:00", "00:00 AM", "9:99:99", "999:99"]
 
 var stat: [String: Int] = {
   var dic: [String: Int] = [:]
@@ -100,7 +101,7 @@ enum BaseLang {
   }
 }
 
-func sameArray(_ a: [String], _ b: [String]) -> Bool {
+func sameArray(_ a: [Substring], _ b: [Substring]) -> Bool {
   guard a.count == b.count else { return false }
   for i in 0..<a.count {
     guard a[i] == b[i] else { return false }
@@ -113,7 +114,7 @@ func makeSure(fileExists file: String, withExtension ext: String, basedOn base: 
   for lang in testLanguages {
     if base == .zhHans && lang == "zh-Hans" { continue }
     guard lang.directory.file(fullname).exists else {
-      print("  [x][\(lang)] File \"\(fullname)\" doesn't extst")
+      print("  [x][\(lang)] File \"\(fullname)\" doesn't exist")
       stat[lang]! += 1
       continue
     }
@@ -131,7 +132,7 @@ func makeSure(allKeysExistInFile file: String, basedOn base: BaseLang) {
     // for all keys in base dic
     for (key, baseValue) in baseDic {
       // check whether key exist
-      if ignorePlaceHolderTitle && (baseValue == "Label" || baseValue == "Text Cell") { continue }
+      if ignorePlaceHolderTitle && ignoredStrings.contains(baseValue) { continue }
       if let value = langDic[key] {
         // check whether has formatting problem
         if fmtRegexp.matches(baseValue) {

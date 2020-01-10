@@ -8,6 +8,7 @@
 
 import Foundation
 import Just
+import PromiseKit
 
 final class ShooterSubtitle: OnlineSubtitle {
 
@@ -35,7 +36,7 @@ final class ShooterSubtitle: OnlineSubtitle {
       }
       let fileName = "[\(self.index)]\(response.fileName ?? "")"
       if let url = data.saveToFolder(Utility.tempDirURL, filename: fileName) {
-        callback(.ok(url))
+        callback(.ok([url]))
       }
     }
   }
@@ -44,8 +45,6 @@ final class ShooterSubtitle: OnlineSubtitle {
 
 
 class ShooterSupport {
-
-  typealias Subtitle = ShooterSubtitle
 
   struct FileInfo {
     var hashValue: String
@@ -62,6 +61,13 @@ class ShooterSupport {
     }
   }
 
+  enum ShooterError: Error {
+    // file error
+    case cannotReadFile
+    case fileTooSmall
+    case networkError
+  }
+
   typealias ResponseData = [[String: Any]]
   typealias ResponseFilesData = [[String: String]]
 
@@ -74,64 +80,67 @@ class ShooterSupport {
     self.language = language
   }
 
-  func hash(_ url: URL) -> FileInfo? {
+  func hash(_ url: URL) -> Promise<FileInfo> {
+    return Promise { resolver in
+      guard let file = try? FileHandle(forReadingFrom: url) else {
+        resolver.reject(ShooterError.cannotReadFile)
+        return
+      }
 
-    guard let file = try? FileHandle(forReadingFrom: url) else {
-      Utility.log("Cannot get file handle")
-      return nil
+      file.seekToEndOfFile()
+      let fileSize: UInt64 = file.offsetInFile
+
+      guard fileSize >= 12288 else {
+        resolver.reject(ShooterError.fileTooSmall)
+        return
+      }
+
+      let offsets: [UInt64] = [
+        4096,
+        fileSize / 3 * 2,
+        fileSize / 3,
+        fileSize - 8192
+      ]
+
+      let hash = offsets.map { offset -> String in
+        file.seek(toFileOffset: offset)
+        return file.readData(ofLength: chunkSize).md5
+        }.joined(separator: ";")
+
+      file.closeFile()
+
+      resolver.fulfill(FileInfo(hashValue: hash, path: url.path))
     }
-
-    file.seekToEndOfFile()
-    let fileSize: UInt64 = file.offsetInFile
-
-    guard fileSize >= 12288 else {
-      Utility.log("File length less than 12k??")
-      return nil
-    }
-
-    let offsets: [UInt64] = [
-      4096,
-      fileSize / 3 * 2,
-      fileSize / 3,
-      fileSize - 8192
-    ]
-
-    let hash = offsets.map { offset -> String in
-      file.seek(toFileOffset: offset)
-      return file.readData(ofLength: chunkSize).md5
-      }.joined(separator: ";")
-
-    file.closeFile()
-
-    return FileInfo(hashValue: hash, path: url.path)
   }
 
-  func request(_ info: FileInfo, callback: @escaping OnlineSubtitle.SubCallback) {
-    Just.post(apiPath, params: info.dictionary, timeout: 10) { response in
-      guard response.ok else {
-        PlayerCore.shared.sendOSD(.networkError)
-        return
-      }
-      guard let json = response.json as? ResponseData else {
-        callback([])
-        return
-      }
-
-      var subtitles: [ShooterSubtitle] = []
-      var index = 1
-
-      json.forEach { sub in
-        let filesDic = sub["Files"] as! ResponseFilesData
-        let files = filesDic.map { o -> Subtitle.SubFile in
-          return Subtitle.SubFile(ext: o["Ext"]!, path: o["Link"]!)
+  func request(_ info: FileInfo) -> Promise<[ShooterSubtitle]> {
+    return Promise { resolver in
+      Just.post(apiPath, params: info.dictionary, timeout: 10) { response in
+        guard response.ok else {
+          resolver.reject(ShooterError.networkError)
+          return
         }
-        let desc = sub["Desc"] as? String ?? ""
-        let delay = sub["Delay"] as? Int ?? 0
+        guard let json = response.json as? ResponseData else {
+          resolver.fulfill([])
+          return
+        }
 
-        subtitles.append(ShooterSubtitle(index: index, desc: desc, delay: delay, files: files))
-        index += 1
+        var subtitles: [ShooterSubtitle] = []
+        var index = 1
+
+        json.forEach { sub in
+          let filesDic = sub["Files"] as! ResponseFilesData
+          let files = filesDic.map { o -> ShooterSubtitle.SubFile in
+            return ShooterSubtitle.SubFile(ext: o["Ext"]!, path: o["Link"]!)
+          }
+          let desc = sub["Desc"] as? String ?? ""
+          let delay = sub["Delay"] as? Int ?? 0
+
+          subtitles.append(ShooterSubtitle(index: index, desc: desc, delay: delay, files: files))
+          index += 1
+        }
+        resolver.fulfill(subtitles)
       }
-      callback(subtitles)
     }
   }
 

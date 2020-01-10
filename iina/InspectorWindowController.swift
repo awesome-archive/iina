@@ -10,8 +10,8 @@ import Cocoa
 
 class InspectorWindowController: NSWindowController, NSTableViewDelegate, NSTableViewDataSource {
 
-  override var windowNibName: String {
-    return "InspectorWindowController"
+  override var windowNibName: NSNib.Name {
+    return NSNib.Name("InspectorWindowController")
   }
 
   var updateTimer: Timer?
@@ -65,21 +65,27 @@ class InspectorWindowController: NSWindowController, NSTableViewDelegate, NSTabl
   @IBOutlet weak var voFPSField: NSTextField!
   @IBOutlet weak var edispFPSField: NSTextField!
   @IBOutlet weak var watchTableView: NSTableView!
-
+  @IBOutlet weak var deleteButton: NSButton!
 
   override func windowDidLoad() {
     super.windowDidLoad()
-    window?.appearance = NSAppearance(named: NSAppearanceNameVibrantDark)
 
-    watchProperties = UserDefaults.standard.array(forKey: Preference.Key.watchProperties) as! [String]
+    watchProperties = Preference.array(for: .watchProperties) as! [String]
     watchTableView.delegate = self
     watchTableView.dataSource = self
+
+    deleteButton.isEnabled = false
+
+    if #available(macOS 10.14, *) {} else {
+      window?.appearance = NSAppearance(named: .vibrantDark)
+    }
 
     updateInfo()
 
     updateTimer = Timer.scheduledTimer(timeInterval: TimeInterval(1), target: self, selector: #selector(dynamicUpdate), userInfo: nil, repeats: true)
 
-    NotificationCenter.default.addObserver(self, selector: #selector(fileLoaded), name: Constants.Noti.fileLoaded, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(fileLoaded), name: .iinaFileLoaded, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(fileLoaded), name: .iinaMainWindowChanged, object: nil)
   }
 
   deinit {
@@ -89,101 +95,110 @@ class InspectorWindowController: NSWindowController, NSTableViewDelegate, NSTabl
   }
 
   func updateInfo(dynamic: Bool = false) {
-    let controller = PlayerCore.shared.mpvController
-    let info = PlayerCore.shared.info
+    let controller = PlayerCore.lastActive.mpv!
+    let info = PlayerCore.lastActive.info
 
-    if !dynamic {
+    DispatchQueue.main.async {
 
-      // string properties
+      if !dynamic {
 
-      let strProperties: [String: NSTextField] = [
-        MPVProperty.path: pathField,
-        MPVProperty.fileFormat: fileFormatField,
-        MPVProperty.chapters: chaptersField,
-        MPVProperty.editions: editionsField,
+        // string properties
 
-        MPVProperty.videoFormat: vformatField,
-        MPVProperty.videoCodec: vcodecField,
-        MPVProperty.hwdecCurrent: vdecoderField,
-        MPVProperty.containerFps: vfpsField,
-        MPVProperty.currentVo: voField,
-        MPVProperty.audioCodec: acodecField,
-        MPVProperty.currentAo: aoField,
-        MPVProperty.audioParamsFormat: aformatField,
-        MPVProperty.audioParamsChannels: achannelsField,
-        MPVProperty.audioBitrate: abitrateField,
-        MPVProperty.audioParamsSamplerate: asamplerateField
+        let strProperties: [String: NSTextField] = [
+          MPVProperty.path: self.pathField,
+          MPVProperty.fileFormat: self.fileFormatField,
+          MPVProperty.chapters: self.chaptersField,
+          MPVProperty.editions: self.editionsField,
+
+          MPVProperty.videoFormat: self.vformatField,
+          MPVProperty.videoCodec: self.vcodecField,
+          MPVProperty.hwdecCurrent: self.vdecoderField,
+          MPVProperty.containerFps: self.vfpsField,
+          MPVProperty.currentVo: self.voField,
+          MPVProperty.audioCodec: self.acodecField,
+          MPVProperty.currentAo: self.aoField,
+          MPVProperty.audioParamsFormat: self.aformatField,
+          MPVProperty.audioParamsChannels: self.achannelsField,
+          MPVProperty.audioBitrate: self.abitrateField,
+          MPVProperty.audioParamsSamplerate: self.asamplerateField
+        ]
+
+        for (k, v) in strProperties {
+          let value = controller.getString(k)
+          v.stringValue = value ?? "N/A"
+          self.setLabelColor(v, by: value != nil)
+        }
+
+        // other properties
+
+        let duration = controller.getDouble(MPVProperty.duration)
+        self.durationField.stringValue = VideoTime(duration).stringRepresentation
+
+        let vwidth = controller.getInt(MPVProperty.width)
+        let vheight = controller.getInt(MPVProperty.height)
+        self.vsizeField.stringValue = "\(vwidth)\u{d7}\(vheight)"
+
+        let fileSize = controller.getInt(MPVProperty.fileSize)
+        self.fileSizeField.stringValue = "\(FloatingPointByteCountFormatter.string(fromByteCount: fileSize))B"
+
+        // track list
+
+        self.trackPopup.removeAllItems()
+        var needSeparator = false
+        for track in info.videoTracks {
+          self.trackPopup.menu?.addItem(withTitle: "Video" + track.readableTitle,
+                                   action: nil, tag: nil, obj: track, stateOn: false)
+          needSeparator = true
+        }
+        if needSeparator && !info.audioTracks.isEmpty {
+          self.trackPopup.menu?.addItem(NSMenuItem.separator())
+        }
+        for track in info.audioTracks {
+          self.trackPopup.menu?.addItem(withTitle: "Audio" + track.readableTitle,
+                                   action: nil, tag: nil, obj: track, stateOn: false)
+          needSeparator = true
+        }
+        if needSeparator && !info.subTracks.isEmpty {
+          self.trackPopup.menu?.addItem(NSMenuItem.separator())
+        }
+        for track in info.subTracks {
+          self.trackPopup.menu?.addItem(withTitle: "Subtitle" + track.readableTitle,
+                                   action: nil, tag: nil, obj: track, stateOn: false)
+        }
+        self.trackPopup.selectItem(at: 0)
+        self.updateTrack()
+
+      }
+
+      let vbitrate = controller.getInt(MPVProperty.videoBitrate)
+      self.vbitrateField.stringValue = FloatingPointByteCountFormatter.string(fromByteCount: vbitrate) + "bps"
+
+      let abitrate = controller.getInt(MPVProperty.audioBitrate)
+      self.abitrateField.stringValue = FloatingPointByteCountFormatter.string(fromByteCount: abitrate) + "bps"
+
+      let dynamicStrProperties: [String: NSTextField] = [
+        MPVProperty.avsync: self.avsyncField,
+        MPVProperty.totalAvsyncChange: self.totalAvsyncField,
+        MPVProperty.frameDropCount: self.droppedFramesField,
+        MPVProperty.mistimedFrameCount: self.mistimedFramesField,
+        MPVProperty.displayFps: self.displayFPSField,
+        MPVProperty.estimatedVfFps: self.voFPSField,
+        MPVProperty.estimatedDisplayFps: self.edispFPSField
       ]
 
-      for (k, v) in strProperties {
+      for (k, v) in dynamicStrProperties {
         let value = controller.getString(k)
         v.stringValue = value ?? "N/A"
-        setLabelColor(v, by: value != nil)
+        self.setLabelColor(v, by: value != nil)
       }
-
-      // other properties
-
-      let duration = controller.getDouble(MPVProperty.duration)
-      durationField.stringValue = VideoTime(duration).stringRepresentation
-
-      let vwidth = controller.getInt(MPVProperty.width)
-      let vheight = controller.getInt(MPVProperty.height)
-      vsizeField.stringValue = "\(vwidth)\u{d7}\(vheight)"
-
-      let fileSize = controller.getInt(MPVProperty.fileSize)
-      fileSizeField.stringValue = FileSize.format(fileSize, unit: .b)
-
-      // track list
-
-      trackPopup.removeAllItems()
-      for track in info.videoTracks {
-        trackPopup.menu?.addItem(withTitle: "Video" + track.readableTitle,
-                                 action: nil, tag: nil, obj: track, stateOn: false)
-      }
-      trackPopup.menu?.addItem(NSMenuItem.separator())
-      for track in info.audioTracks {
-        trackPopup.menu?.addItem(withTitle: "Audio" + track.readableTitle,
-                                 action: nil, tag: nil, obj: track, stateOn: false)
-      }
-      trackPopup.menu?.addItem(NSMenuItem.separator())
-      for track in info.subTracks {
-        trackPopup.menu?.addItem(withTitle: "Sub" + track.readableTitle,
-                                 action: nil, tag: nil, obj: track, stateOn: false)
-      }
-      trackPopup.selectItem(at: 0)
-      updateTrack()
-
     }
-
-    let vbitrate = controller.getInt(MPVProperty.videoBitrate)
-    vbitrateField.stringValue = FileSize.format(vbitrate, unit: .b) + "bps"
-
-    let abitrate = controller.getInt(MPVProperty.audioBitrate)
-    abitrateField.stringValue = FileSize.format(abitrate, unit: .b) + "bps"
-
-    let dynamicStrProperties: [String: NSTextField] = [
-      MPVProperty.avsync: avsyncField,
-      MPVProperty.totalAvsyncChange: totalAvsyncField,
-      MPVProperty.frameDropCount: droppedFramesField,
-      MPVProperty.mistimedFrameCount: mistimedFramesField,
-      MPVProperty.displayFps: displayFPSField,
-      MPVProperty.estimatedVfFps: voFPSField,
-      MPVProperty.estimatedDisplayFps: edispFPSField
-    ]
-
-    for (k, v) in dynamicStrProperties {
-      let value = controller.getString(k)
-      v.stringValue = value ?? "N/A"
-      setLabelColor(v, by: value != nil)
-    }
-
   }
 
-  func fileLoaded() {
+  @objc func fileLoaded() {
     updateInfo()
   }
 
-  func dynamicUpdate() {
+  @objc func dynamicUpdate() {
     updateInfo(dynamic: true)
     watchTableView.reloadData()
   }
@@ -198,15 +213,15 @@ class InspectorWindowController: NSWindowController, NSTableViewDelegate, NSTabl
     setLabelColor(trackExternalField, by: track.isExternal)
 
     let strProperties: [(String?, NSTextField)] = [
-      (track.srcId?.toStr(), trackSourceIdField),
+      (track.srcId?.description, trackSourceIdField),
       (track.title, trackTitleField),
       (track.lang, trackLangField),
       (track.externalFilename, trackFilePathField),
       (track.codec, trackCodecField),
       (track.decoderDesc, trackDecoderField),
-      (track.demuxFps?.toStr(), trackFPSField),
+      (track.demuxFps?.description, trackFPSField),
       (track.demuxChannels, trackChannelsField),
-      (track.demuxSamplerate?.toStr(), trackSampleRateField)
+      (track.demuxSamplerate?.description, trackSampleRateField)
     ]
 
     for (str, field) in strProperties {
@@ -224,11 +239,11 @@ class InspectorWindowController: NSWindowController, NSTableViewDelegate, NSTabl
   func tableView(_ tableView: NSTableView, objectValueFor tableColumn: NSTableColumn?, row: Int) -> Any? {
     guard let identifier = tableColumn?.identifier else { return nil }
 
-    guard let property = watchProperties.at(row) else { return nil }
-    if identifier == Constants.Identifier.key {
+    guard let property = watchProperties[at: row] else { return nil }
+    if identifier == .key {
       return property
-    } else if identifier == Constants.Identifier.value {
-      return PlayerCore.shared.mpvController.getString(property) ?? "<Error>"
+    } else if identifier == .value {
+      return PlayerCore.active.mpv.getString(property) ?? "<Error>"
     }
     return ""
   }
@@ -236,17 +251,21 @@ class InspectorWindowController: NSWindowController, NSTableViewDelegate, NSTabl
   func tableView(_ tableView: NSTableView, setObjectValue object: Any?, for tableColumn: NSTableColumn?, row: Int) {
     guard let value = object as? String,
       let identifier = tableColumn?.identifier else { return }
-    if identifier == Constants.Identifier.key {
+    if identifier == .key {
       watchProperties[row] = value
     }
     saveWatchList()
   }
 
+  func tableViewSelectionDidChange(_ notification: Notification) {
+    deleteButton.isEnabled = (watchTableView.selectedRow != -1)
+  }
+
   @IBAction func addWatchAction(_ sender: AnyObject) {
-    let _ = Utility.quickPromptPanel("add_watch") { str in
-      watchProperties.append(str)
-      watchTableView.reloadData()
-      saveWatchList()
+    Utility.quickPromptPanel("add_watch", sheetWindow: window) { str in
+      self.watchProperties.append(str)
+      self.watchTableView.reloadData()
+      self.saveWatchList()
     }
   }
 
@@ -277,7 +296,7 @@ class InspectorWindowController: NSWindowController, NSTableViewDelegate, NSTabl
   }
 
   private func saveWatchList() {
-    UserDefaults.standard.set(watchProperties, forKey: Preference.Key.watchProperties)
+    Preference.set(watchProperties, for: .watchProperties)
   }
 
 }
