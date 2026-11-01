@@ -1,39 +1,50 @@
-
-/* Class = "NSBox"; title = "Box"; ObjectID = "1NU-Lr-cuR"; */
-"1NU-Lr-cuR.title" = "Box";
-
-/* Class = "NSTextFieldCell"; title = "Text Cell"; ObjectID = "1nQ-mn-luW"; */
-"1nQ-mn-luW.title" = "Text Cell";
-
-/* Class = "NSTextFieldCell"; title = "Additional MPV options"; ObjectID = "6F6-Y7-8oR"; */
-"6F6-Y7-8oR.title" = "MPVの追加オプション";
+/* Class = "NSTextFieldCell"; title = "Additional mpv options"; ObjectID = "6F6-Y7-8oR"; */
+"6F6-Y7-8oR.title" = "その他のmpvオプション";
 
 /* Class = "NSButtonCell"; title = "Enable advanced settings"; ObjectID = "7ml-VU-xWv"; */
-"7ml-VU-xWv.title" = "拡張機能の有効化";
-
-/* Class = "NSTextFieldCell"; title = "Text Cell"; ObjectID = "A9b-rU-8Ku"; */
-"A9b-rU-8Ku.title" = "Text Cell";
+"7ml-VU-xWv.title" = "詳細設定を有効にする";
 
 /* Class = "NSTableColumn"; headerCell.title = "Name"; ObjectID = "E3I-Q7-9t1"; */
 "E3I-Q7-9t1.headerCell.title" = "名前";
 
 /* Class = "NSTextFieldCell"; title = "The following settings will require restarting IINA to take effect."; ObjectID = "HMa-Vz-EUk"; */
-"HMa-Vz-EUk.title" = "設定を反映させるにはIINAを再起動する必要があります。";
+"HMa-Vz-EUk.title" = "以下の設定を有効にするには、IINAを再起動する必要があります。";
 
-/* Class = "NSButtonCell"; title = "Open log directory"; ObjectID = "JDA-g3-RNX"; */
+/* Class = "NSButtonCell"; title = "Open Log Directory"; ObjectID = "JDA-g3-RNX"; */
 "JDA-g3-RNX.title" = "ログディレクトリを開く";
 
-/* Class = "NSButtonCell"; title = "Enable logging"; ObjectID = "LCd-uY-Yze"; */
-"LCd-uY-Yze.title" = "ログを残す";
+/* Class = "NSButtonCell"; title = "Enable logging to file"; ObjectID = "LCd-uY-Yze"; */
+"LCd-uY-Yze.title" = "ファイルへのログ記録を有効にする";
 
-/* Class = "NSButtonCell"; title = "Choose directory…"; ObjectID = "MRT-u8-xTX"; */
-"MRT-u8-xTX.title" = "ディレクトリを選択…";
+/* Class = "NSButtonCell"; title = "Choose…"; ObjectID = "MRT-u8-xTX"; */
+"MRT-u8-xTX.title" = "選択…";
+
+/* Class = "NSTextFieldCell"; title = "Settings"; ObjectID = "Qmc-Tb-d7d"; */
+"Qmc-Tb-d7d.title" = "設定";
 
 /* Class = "NSTableColumn"; headerCell.title = "Value"; ObjectID = "SX9-fy-bss"; */
 "SX9-fy-bss.headerCell.title" = "値";
 
 /* Class = "NSButtonCell"; title = "Use config directory:"; ObjectID = "ehL-8Y-G8h"; */
-"ehL-8Y-G8h.title" = "設定ディレクトリを使用:";
+"ehL-8Y-G8h.title" = "構成ディレクトリを使用:";
 
-/* Class = "NSButtonCell"; title = "Use MPV's OSD"; ObjectID = "phK-g9-Vbg"; */
-"phK-g9-Vbg.title" = "MPVのOSDを使用する";
+/* Class = "NSButtonCell"; title = "Use mpv's OSD"; ObjectID = "phK-g9-Vbg"; */
+"phK-g9-Vbg.title" = "mpvのOSDを使用";
+
+/* Class = "NSTextFieldCell"; title = "Log level:"; ObjectID = "nFf-vh-bNd"; */
+"nFf-vh-bNd.title" = "ログレベル:";
+
+/* Class = "NSButtonCell"; title = "Show Log Viewer"; ObjectID = "Owx-92-Ogg"; */
+"Owx-92-Ogg.title" = "ログビューアを表示";
+
+/* Class = "NSMenuItem"; title = "Verbose"; ObjectID = "S9M-yY-q0w"; */
+"S9M-yY-q0w.title" = "詳細";
+
+/* Class = "NSMenuItem"; title = "Debug"; ObjectID = "hGq-ek-VHd"; */
+"hGq-ek-VHd.title" = "デバッグ";
+
+/* Class = "NSMenuItem"; title = "Warning"; ObjectID = "exP-JC-h7t"; */
+"exP-JC-h7t.title" = "警告";
+
+/* Class = "NSMenuItem"; title = "Error"; ObjectID = "sl8-Df-vbX"; */
+"sl8-Df-vbX.title" = "エラー";

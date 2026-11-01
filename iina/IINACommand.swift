@@ -20,11 +20,20 @@ enum IINACommand: String {
   case playlistPanel = "playlist-panel"
   case chapterPanel = "chapter-panel"
 
+  case toggleMusicMode = "toggle-music-mode"
+  case liveText = "live-text"
+
   case flip = "toggle-flip"
   case mirror = "toggle-mirror"
 
+  case biggerWindow = "bigger-window"
+  case smallerWindow = "smaller-window"
+  case fitToScreen = "fit-to-screen"
+
   case saveCurrentPlaylist = "save-playlist"
+  case showCurrentFileInFinder = "show-current-file-in-finder"
   case deleteCurrentFile = "delete-current-file"
+  case deleteCurrentFileHard = "delete-current-file-hard"
 
   case findOnlineSubs = "find-online-subs"
   case saveDownloadedSub = "save-downloaded-sub"
